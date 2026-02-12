@@ -44,10 +44,9 @@ app.post("/add-employee", async (req, res) => {
 
 // 🔹 LOGIN
 app.post("/login", async (req, res) => {
-  if (req.body.empId === "admin" && req.body.password === "admin123") {
-    return res.json({ role: "admin" });
-  }
-
+ if (empId === "admin" && password === "admin@0610") {
+  return res.json({ role: "admin" });
+}
   const emp = await Employee.findOne({
     empId: req.body.empId,
     password: req.body.password
