@@ -41,7 +41,7 @@ app.post("/login", async (req, res) => {
   const { empId, password } = req.body;
 
   // admin login
-  if (empId === "admin" && password === "admin") {
+  if (empId === "admin" && password === "admin@0610") {
     return res.json({ role: "admin" });
   }
 
