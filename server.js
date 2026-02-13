@@ -3,70 +3,51 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// 🔥 MongoDB Connection
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ Mongo Error:", err));
+const PORT = process.env.PORT || 10000;
 
-// ===== Schemas =====
-const employeeSchema = new mongoose.Schema({
+/* ================= MONGODB CONNECT ================= */
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log("MongoDB Connected ✅"))
+  .catch(err => console.error("MongoDB Error ❌", err));
+
+/* ================= MODELS ================= */
+const EmployeeSchema = new mongoose.Schema({
   empId: String,
   name: String,
   password: String,
+  role: { type: String, default: "employee" }
 });
+const Employee = mongoose.model("Employee", EmployeeSchema);
 
-const Employee = mongoose.model("Employee", employeeSchema);
+const AttendanceSchema = new mongoose.Schema({
+  empId: String,
+  date: String,
+  checkIn: String,
+  checkOut: String,
+  status: String
+});
+const Attendance = mongoose.model("Attendance", AttendanceSchema);
 
-// ===== Routes =====
+/* ================= ROUTES ================= */
 
-// Health check
+// health check
 app.get("/", (req, res) => {
   res.send("Attendance Backend Running ✅");
 });
 
-// Get employees
-app.get("/employees", async (req, res) => {
-  const employees = await Employee.find();
-  res.json(employees);
-});
-
-// Add employee
-app.post("/employees", async (req, res) => {
-  const { empId, name, password } = req.body;
-
-  if (!empId || !name || !password) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
-
-  const exists = await Employee.findOne({ empId });
-  if (exists) {
-    return res.status(409).json({ error: "Employee already exists" });
-  }
-
-  const emp = new Employee({ empId, name, password });
-  await emp.save();
-
-  res.json({ success: true });
-});
-
-// Login
+// admin / employee login
 app.post("/login", async (req, res) => {
   const { empId, password } = req.body;
 
-  // 🔐 Admin login
+  // admin login
   if (empId === "admin" && password === "admin@0610") {
     return res.json({ role: "admin" });
   }
 
   const emp = await Employee.findOne({ empId, password });
-
   if (!emp) {
     return res.status(401).json({ error: "Invalid login" });
   }
@@ -74,7 +55,48 @@ app.post("/login", async (req, res) => {
   res.json({ role: "employee", emp });
 });
 
-// Start server
+// add employee (admin)
+app.post("/employees", async (req, res) => {
+  const emp = await Employee.create(req.body);
+  res.json(emp);
+});
+
+// get employees
+app.get("/employees", async (req, res) => {
+  const emps = await Employee.find();
+  res.json(emps);
+});
+
+// check-in
+app.post("/checkin", async (req, res) => {
+  const { empId } = req.body;
+  const today = new Date().toISOString().split("T")[0];
+
+  const att = await Attendance.create({
+    empId,
+    date: today,
+    checkIn: new Date().toLocaleTimeString(),
+    status: "IN"
+  });
+
+  res.json(att);
+});
+
+// check-out
+app.post("/checkout", async (req, res) => {
+  const { empId } = req.body;
+  const today = new Date().toISOString().split("T")[0];
+
+  const att = await Attendance.findOneAndUpdate(
+    { empId, date: today },
+    { checkOut: new Date().toLocaleTimeString(), status: "OUT" },
+    { new: true }
+  );
+
+  res.json(att);
+});
+
+/* ================= START ================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("Server running on port", PORT);
 });
