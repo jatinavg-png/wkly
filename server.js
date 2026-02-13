@@ -166,7 +166,8 @@ app.get("/admin/report", async (req, res) => {
   res.send(csv);
 });
 
-/* ================= START SERVER ================= */
-app.listen(10000, () => {
-  console.log("WKLY Backend running on 10000");
+/* ================= START SERVER (FINAL FIX) ================= */
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log("WKLY Backend running on port", PORT);
 });
