@@ -6,10 +6,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ================= DB CONNECT ================= */
-mongoose.connect(process.env.MONGO_URI)
+/* ================= DB CONNECT (FINAL FIX) ================= */
+mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+  .catch(err => console.log("Mongo Error:", err));
 
 /* ================= MODELS ================= */
 const EmployeeSchema = new mongoose.Schema({
@@ -36,11 +36,11 @@ const LeaveSchema = new mongoose.Schema({
 });
 const Leave = mongoose.model("Leave", LeaveSchema);
 
-/* ================= LOGIN ================= */
+/* ================= LOGIN (ADMIN FINAL) ================= */
 app.post("/login", async (req, res) => {
   const { empId, password } = req.body;
 
-  // admin login
+  // ✅ ADMIN LOGIN (FINAL)
   if (empId === "admin" && password === "admin@0610") {
     return res.json({ role: "admin" });
   }
@@ -64,9 +64,7 @@ app.post("/employees", async (req, res) => {
   const { empId, name, password } = req.body;
 
   const exists = await Employee.findOne({ empId });
-  if (exists) {
-    return res.status(400).json({ error: "Employee already exists" });
-  }
+  if (exists) return res.status(400).json({ error: "Employee exists" });
 
   await Employee.create({ empId, name, password });
   res.json({ success: true });
@@ -84,14 +82,8 @@ app.delete("/employees/:id", async (req, res) => {
 app.post("/checkin", async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
 
-  const existing = await Attendance.findOne({
-    empId: req.body.empId,
-    date: today
-  });
-
-  if (existing) {
-    return res.json({ message: "Already checked in" });
-  }
+  const existing = await Attendance.findOne({ empId: req.body.empId, date: today });
+  if (existing) return res.json({ message: "Already checked in" });
 
   await Attendance.create({
     empId: req.body.empId,
@@ -107,12 +99,10 @@ app.post("/checkout", async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const record = await Attendance.findOne({ empId: req.body.empId, date: today });
 
-  if (!record || record.checkOut) {
-    return res.json({ message: "Invalid checkout" });
-  }
+  if (!record || record.checkOut) return res.json({ message: "Invalid checkout" });
 
   record.checkOut = new Date().toLocaleTimeString();
-  record.otHours = 0; // future OT logic
+  record.otHours = 0;
   await record.save();
 
   res.json({ success: true });
@@ -120,10 +110,7 @@ app.post("/checkout", async (req, res) => {
 
 /* ================= APPLY LEAVE ================= */
 app.post("/leave", async (req, res) => {
-  await Leave.create({
-    empId: req.body.empId,
-    date: req.body.date
-  });
+  await Leave.create({ empId: req.body.empId, date: req.body.date });
   res.json({ success: true });
 });
 
@@ -166,7 +153,7 @@ app.get("/admin/report", async (req, res) => {
   res.send(csv);
 });
 
-/* ================= START SERVER (FINAL FIX) ================= */
+/* ================= START SERVER ================= */
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log("WKLY Backend running on port", PORT);
