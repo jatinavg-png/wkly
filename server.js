@@ -6,155 +6,185 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ================= DB CONNECT (FINAL FIX) ================= */
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log("Mongo Error:", err));
+/* ================= DB ================= */
+mongoose.connect(process.env.MONGO_URI)
+  .then(()=>console.log("MongoDB Connected"))
+  .catch(err=>console.log(err));
 
 /* ================= MODELS ================= */
-const EmployeeSchema = new mongoose.Schema({
-  empId: String,
-  name: String,
-  password: String,
-  leaveBalance: { type: Number, default: 1 }
-});
-const Employee = mongoose.model("Employee", EmployeeSchema);
+const Employee = mongoose.model("Employee", new mongoose.Schema({
+  empId:String,
+  name:String,
+  password:String,
+  leaveBalance:{type:Number,default:1}
+}));
 
-const AttendanceSchema = new mongoose.Schema({
-  empId: String,
-  date: String,
-  checkIn: String,
-  checkOut: String,
-  otHours: Number
-});
-const Attendance = mongoose.model("Attendance", AttendanceSchema);
+const Attendance = mongoose.model("Attendance", new mongoose.Schema({
+  empId:String,
+  date:String,
+  checkIn:String,
+  checkOut:String,
+  hours:Number,
+  otHours:Number,
+  late:Boolean
+}));
 
-const LeaveSchema = new mongoose.Schema({
-  empId: String,
-  date: String,
-  status: { type: String, default: "pending" }
-});
-const Leave = mongoose.model("Leave", LeaveSchema);
+const Leave = mongoose.model("Leave", new mongoose.Schema({
+  empId:String,
+  date:String,
+  status:{type:String,default:"pending"}
+}));
 
-/* ================= LOGIN (ADMIN FINAL) ================= */
-app.post("/login", async (req, res) => {
-  const { empId, password } = req.body;
+const OT = mongoose.model("OT", new mongoose.Schema({
+  empId:String,
+  date:String,
+  hours:Number,
+  status:{type:String,default:"pending"}
+}));
 
-  // ✅ ADMIN LOGIN (FINAL)
-  if (empId === "admin" && password === "admin@0610") {
-    return res.json({ role: "admin" });
+const Notification = mongoose.model("Notification", new mongoose.Schema({
+  empId:String,
+  message:String,
+  date:{type:Date,default:Date.now}
+}));
+
+/* ================= LOGIN ================= */
+app.post("/login", async(req,res)=>{
+  const {empId,password}=req.body;
+
+  if(empId==="admin" && password==="admin@0610"){
+    return res.json({role:"admin"});
   }
 
-  // employee login
-  const user = await Employee.findOne({ empId, password });
-  if (!user) {
-    return res.status(401).json({ error: "Invalid login" });
-  }
+  const user = await Employee.findOne({empId,password});
+  if(!user) return res.status(401).json({error:"Invalid login"});
 
   res.json({
-    role: "employee",
-    empId: user.empId,
-    name: user.name,
-    leaveBalance: user.leaveBalance
+    role:"employee",
+    empId:user.empId,
+    leaveBalance:user.leaveBalance
   });
 });
 
-/* ================= ADD EMPLOYEE ================= */
-app.post("/employees", async (req, res) => {
-  const { empId, name, password } = req.body;
-
-  const exists = await Employee.findOne({ empId });
-  if (exists) return res.status(400).json({ error: "Employee exists" });
-
-  await Employee.create({ empId, name, password });
-  res.json({ success: true });
+/* ================= EMPLOYEE ================= */
+app.post("/employees", async(req,res)=>{
+  const {empId,name,password}=req.body;
+  if(await Employee.findOne({empId}))
+    return res.status(400).json({error:"Exists"});
+  await Employee.create({empId,name,password});
+  res.json({success:true});
 });
 
-/* ================= DELETE EMPLOYEE ================= */
-app.delete("/employees/:id", async (req, res) => {
-  await Employee.deleteOne({ empId: req.params.id });
-  await Attendance.deleteMany({ empId: req.params.id });
-  await Leave.deleteMany({ empId: req.params.id });
-  res.json({ success: true });
+app.delete("/employees/:id", async(req,res)=>{
+  const id=req.params.id;
+  await Employee.deleteOne({empId:id});
+  await Attendance.deleteMany({empId:id});
+  await Leave.deleteMany({empId:id});
+  await OT.deleteMany({empId:id});
+  res.json({success:true});
 });
 
-/* ================= CHECK IN ================= */
-app.post("/checkin", async (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+/* ================= ATTENDANCE ================= */
+app.post("/checkin", async(req,res)=>{
+  const today=new Date().toISOString().slice(0,10);
+  const time=new Date();
 
-  const existing = await Attendance.findOne({ empId: req.body.empId, date: today });
-  if (existing) return res.json({ message: "Already checked in" });
+  if(await Attendance.findOne({empId:req.body.empId,date:today}))
+    return res.json({message:"Already checked in"});
 
   await Attendance.create({
-    empId: req.body.empId,
-    date: today,
-    checkIn: new Date().toLocaleTimeString()
+    empId:req.body.empId,
+    date:today,
+    checkIn:time.toLocaleTimeString(),
+    late:time.getHours()>=11
   });
 
-  res.json({ success: true });
+  res.json({success:true});
 });
 
-/* ================= CHECK OUT ================= */
-app.post("/checkout", async (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const record = await Attendance.findOne({ empId: req.body.empId, date: today });
+app.post("/checkout", async(req,res)=>{
+  const today=new Date().toISOString().slice(0,10);
+  const rec=await Attendance.findOne({empId:req.body.empId,date:today});
+  if(!rec || rec.checkOut) return res.json({message:"Invalid"});
 
-  if (!record || record.checkOut) return res.json({ message: "Invalid checkout" });
+  const out=new Date();
+  rec.checkOut=out.toLocaleTimeString();
 
-  record.checkOut = new Date().toLocaleTimeString();
-  record.otHours = 0;
-  await record.save();
+  const diff=(out - new Date(`${today} ${rec.checkIn}`))/(1000*60*60);
+  rec.hours=diff;
+  rec.otHours=Math.max(0,diff-8);
+  await rec.save();
 
-  res.json({ success: true });
+  if(rec.otHours>0){
+    await OT.create({empId:req.body.empId,date:today,hours:rec.otHours});
+  }
+
+  res.json({success:true});
 });
 
-/* ================= APPLY LEAVE ================= */
-app.post("/leave", async (req, res) => {
-  await Leave.create({ empId: req.body.empId, date: req.body.date });
-  res.json({ success: true });
+/* ================= LEAVE ================= */
+app.post("/leave", async(req,res)=>{
+  const emp=await Employee.findOne({empId:req.body.empId});
+
+  if(emp.leaveBalance>0){
+    emp.leaveBalance--;
+    await emp.save();
+    return res.json({autoApproved:true});
+  }
+
+  await Leave.create({empId:req.body.empId,date:req.body.date});
+  res.json({autoApproved:false});
 });
 
-/* ================= ADMIN STATS ================= */
-app.get("/admin/stats", async (req, res) => {
-  const totalEmployees = await Employee.countDocuments();
-  const pendingLeaves = await Leave.countDocuments({ status: "pending" });
-
+/* ================= ADMIN ================= */
+app.get("/admin/stats", async(req,res)=>{
+  const today=new Date().toISOString().slice(0,10);
   res.json({
-    totalEmployees,
-    presentToday: 0,
-    lateToday: 0,
-    pendingLeaves
+    totalEmployees:await Employee.countDocuments(),
+    presentToday:await Attendance.countDocuments({date:today}),
+    lateToday:await Attendance.countDocuments({date:today,late:true}),
+    pendingLeaves:await Leave.countDocuments({status:"pending"})
   });
 });
 
-/* ================= DELETE ATTENDANCE RANGE ================= */
-app.post("/admin/delete-attendance", async (req, res) => {
-  const { fromDate, toDate } = req.body;
-  const result = await Attendance.deleteMany({
-    date: { $gte: fromDate, $lte: toDate }
-  });
-  res.json({ deleted: result.deletedCount });
+app.get("/admin/leaves", async(req,res)=>{
+  res.json(await Leave.find({status:"pending"}));
 });
 
-/* ================= CSV REPORT ================= */
-app.get("/admin/report", async (req, res) => {
-  const { from, to } = req.query;
-  const data = await Attendance.find({
-    date: { $gte: from, $lte: to }
-  });
+app.post("/admin/leave-action", async(req,res)=>{
+  const {id,action}=req.body;
+  const leave=await Leave.findById(id);
+  leave.status=action;
+  await leave.save();
 
-  let csv = "EmpID,Date,CheckIn,CheckOut,OT\n";
-  data.forEach(r => {
-    csv += `${r.empId},${r.date},${r.checkIn || ""},${r.checkOut || ""},${r.otHours || 0}\n`;
-  });
+  if(action==="approved"){
+    await Notification.create({
+      empId:leave.empId,
+      message:`Leave approved for ${leave.date}`
+    });
+  }
+  res.json({success:true});
+});
 
-  res.header("Content-Type", "text/csv");
-  res.attachment("attendance.csv");
+/* ================= CSV ================= */
+app.get("/admin/report", async(req,res)=>{
+  const {from,to}=req.query;
+  const data=await Attendance.find({date:{$gte:from,$lte:to}});
+  let csv="EmpID,Date,Hours,OT\n";
+  data.forEach(r=>{
+    csv+=`${r.empId},${r.date},${r.hours||0},${r.otHours||0}\n`;
+  });
+  res.header("Content-Type","text/csv");
   res.send(csv);
 });
 
-/* ================= START SERVER ================= */
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log("WKLY Backend running on port", PORT);
+/* ================= CLEANUP ================= */
+app.post("/admin/delete-attendance", async(req,res)=>{
+  const {fromDate,toDate}=req.body;
+  const r=await Attendance.deleteMany({date:{$gte:fromDate,$lte:toDate}});
+  res.json({deleted:r.deletedCount});
 });
+
+/* ================= START ================= */
+const PORT=process.env.PORT||10000;
+app.listen(PORT,()=>console.log("WKLY backend running",PORT));
