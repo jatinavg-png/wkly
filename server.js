@@ -8,95 +8,81 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
-/* ================= MONGODB CONNECT ================= */
+/* ===== MongoDB Connect ===== */
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("MongoDB Connected ✅"))
   .catch(err => console.error("MongoDB Error ❌", err));
 
-/* ================= MODELS ================= */
-const EmployeeSchema = new mongoose.Schema({
+/* ===== Models ===== */
+const Employee = mongoose.model("Employee", new mongoose.Schema({
   empId: String,
   name: String,
   password: String,
   role: { type: String, default: "employee" }
-});
-const Employee = mongoose.model("Employee", EmployeeSchema);
+}));
 
-const AttendanceSchema = new mongoose.Schema({
+const Attendance = mongoose.model("Attendance", new mongoose.Schema({
   empId: String,
-  date: String,
+  date: String,          // YYYY-MM-DD
   checkIn: String,
-  checkOut: String,
-  status: String
-});
-const Attendance = mongoose.model("Attendance", AttendanceSchema);
+  checkOut: String
+}));
 
-/* ================= ROUTES ================= */
+/* ===== Routes ===== */
+app.get("/", (req, res) => res.send("Attendance Backend Running ✅"));
 
-// health check
-app.get("/", (req, res) => {
-  res.send("Attendance Backend Running ✅");
-});
-
-// admin / employee login
+/* Login */
 app.post("/login", async (req, res) => {
   const { empId, password } = req.body;
 
-  // admin login
   if (empId === "admin" && password === "admin@0610") {
     return res.json({ role: "admin" });
   }
 
-  const emp = await Employee.findOne({ empId, password });
-  if (!emp) {
-    return res.status(401).json({ error: "Invalid login" });
-  }
+  const user = await Employee.findOne({ empId, password });
+  if (!user) return res.status(401).json({ error: "Invalid login" });
 
-  res.json({ role: "employee", emp });
+  res.json({ role: "employee", user });
 });
 
-// add employee (admin)
+/* Add Employee (Admin) */
 app.post("/employees", async (req, res) => {
   const emp = await Employee.create(req.body);
   res.json(emp);
 });
 
-// get employees
-app.get("/employees", async (req, res) => {
-  const emps = await Employee.find();
-  res.json(emps);
-});
-
-// check-in
+/* Check-in */
 app.post("/checkin", async (req, res) => {
-  const { empId } = req.body;
   const today = new Date().toISOString().split("T")[0];
-
   const att = await Attendance.create({
-    empId,
+    empId: req.body.empId,
     date: today,
-    checkIn: new Date().toLocaleTimeString(),
-    status: "IN"
+    checkIn: new Date().toLocaleTimeString()
   });
-
   res.json(att);
 });
 
-// check-out
+/* Check-out */
 app.post("/checkout", async (req, res) => {
-  const { empId } = req.body;
   const today = new Date().toISOString().split("T")[0];
-
   const att = await Attendance.findOneAndUpdate(
-    { empId, date: today },
-    { checkOut: new Date().toLocaleTimeString(), status: "OUT" },
+    { empId: req.body.empId, date: today },
+    { checkOut: new Date().toLocaleTimeString() },
     { new: true }
   );
-
   res.json(att);
 });
 
-/* ================= START ================= */
+/* Admin: Delete Attendance by Date Range */
+app.post("/admin/delete-attendance", async (req, res) => {
+  const { fromDate, toDate } = req.body;
+  const result = await Attendance.deleteMany({
+    date: { $gte: fromDate, $lte: toDate }
+  });
+  res.json({ deleted: result.deletedCount });
+});
+
+/* Start */
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
